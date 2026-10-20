@@ -22,6 +22,11 @@ echo "🚀 Initializing Claude Code PM System"
 echo "======================================"
 echo ""
 
+# Count of things that did not work. The old script reported "Initialization
+# Complete!" and exited 0 whatever had happened above it; this one says so when
+# something failed and exits nonzero.
+problems=0
+
 # Check for required tools
 echo "🔍 Checking dependencies..."
 
@@ -40,6 +45,10 @@ else
     echo "  Please install GitHub CLI manually: https://cli.github.com/"
     exit 1
   fi
+  if ! command -v gh &> /dev/null; then
+    echo "  ❌ gh is still not installed. Install it manually: https://cli.github.com/"
+    exit 1
+  fi
 fi
 
 # Check gh auth status
@@ -51,6 +60,12 @@ else
   echo "  ⚠️ GitHub not authenticated"
   echo "  Running: gh auth login"
   gh auth login
+  # Cancelling the login, or it failing, used to fall straight through to
+  # "Initialization Complete!".
+  if ! gh auth status &> /dev/null; then
+    echo "  ❌ Still not authenticated. Run 'gh auth login' and re-run this script."
+    exit 1
+  fi
 fi
 
 # Check for gh-sub-issue extension
@@ -60,26 +75,32 @@ if gh extension list | grep -q "yahsan2/gh-sub-issue"; then
   echo "  ✅ gh-sub-issue extension installed"
 else
   echo "  📥 Installing gh-sub-issue extension..."
-  gh extension install yahsan2/gh-sub-issue
+  if ! gh extension install yahsan2/gh-sub-issue; then
+    # Optional: sync falls back to plain issues without it.
+    echo "  ⚠️ Could not install gh-sub-issue; tasks will be created as plain issues"
+  fi
 fi
 
 # Create directory structure
 echo ""
 echo "📁 Creating directory structure..."
-mkdir -p .claude/prds
-mkdir -p .claude/epics
-mkdir -p .claude/rules
-mkdir -p .claude/agents
-mkdir -p .claude/scripts/pm
-echo "  ✅ Directories created"
+if mkdir -p .claude/prds .claude/epics .claude/rules .claude/agents .claude/scripts/pm; then
+  echo "  ✅ Directories created"
+else
+  echo "  ❌ Could not create the .claude directories (permissions? read-only folder?)"
+  exit 1
+fi
 
 # Copy scripts if in main repo
 if [ -d "scripts/pm" ] && [ ! "$(pwd)" = *"/.claude"* ]; then
   echo ""
   echo "📝 Copying PM scripts..."
-  cp -r scripts/pm/* .claude/scripts/pm/
-  chmod +x .claude/scripts/pm/*.sh
-  echo "  ✅ Scripts copied and made executable"
+  if cp -r scripts/pm/* .claude/scripts/pm/ && chmod +x .claude/scripts/pm/*.sh; then
+    echo "  ✅ Scripts copied and made executable"
+  else
+    echo "  ❌ Could not copy the PM scripts into .claude/scripts/pm"
+    problems=$((problems + 1))
+  fi
 fi
 
 # Check for git
@@ -133,6 +154,7 @@ if git rev-parse --git-dir > /dev/null 2>&1; then
           echo "  ⚠️ Some GitHub labels created (epic: $epic_created, task: $task_created)"
         else
           echo "  ❌ Could not create GitHub labels (check repository permissions)"
+          problems=$((problems + 1))
         fi
       else
         echo "  ℹ️ Not a GitHub repository - skipping label creation"
@@ -169,11 +191,21 @@ Always run tests before committing:
 
 Follow existing patterns in the codebase.
 EOF
-  echo "  ✅ CLAUDE.md created"
+  if [ -s CLAUDE.md ]; then
+    echo "  ✅ CLAUDE.md created"
+  else
+    echo "  ❌ Could not create CLAUDE.md"
+    problems=$((problems + 1))
+  fi
 fi
 
 # Summary
 echo ""
+if [ "$problems" -gt 0 ]; then
+  echo "❌ Initialization finished with $problems problem(s) - see the ❌ lines above."
+  echo "=========================="
+  exit 1
+fi
 echo "✅ Initialization Complete!"
 echo "=========================="
 echo ""

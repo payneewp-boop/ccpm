@@ -1,5 +1,27 @@
 # CCPM Changelog
 
+## [2026-10-20] - Script and sync fixes from a code review
+
+### 🐛 Fixed
+- **Frontmatter stripping deleted the body.** `sed '1,/^---$/d; 1,/^---$/d'` in `sync.md` and
+  `conventions.md` removed everything up to a later `---`, so issues were created with an empty
+  or truncated body. Replaced with an `awk` that drops only the leading block.
+- **Parallel sync overwrote itself.** Every task wrote its body to `/tmp/task-body.md`; agents
+  running in parallel clobbered each other's text. Each operation now uses its own `mktemp` file.
+- **Completed dependencies never released a task.** `next.sh`, `blocked.sh`, `standup.sh` and
+  `epic-status.sh` only checked whether `depends_on` was empty. They now read the dependency's
+  own status (shared `open_deps` in `scripts/_lib.sh`); a dependency with no task file keeps its
+  task blocked.
+- **`validate.sh` always exited 0.** It now exits 1 on errors or files without frontmatter
+  (warnings still pass). A `---` anywhere no longer counts as frontmatter: it must open line 1 and
+  be closed.
+- **`init.sh` reported success after failing.** A cancelled `gh auth login`, a failed `mkdir` or
+  `cp`, or a label failure now stops or ends with a nonzero exit instead of "Initialization
+  Complete!".
+
+### ✅ Tests
+- `bash tests/scripts.test.sh` covers each of the above (17 cases; 7 fail on the old scripts).
+
 ## [2025-01-24] - Major Cleanup & Issue Resolution Release
 
 ### 🎯 Overview
