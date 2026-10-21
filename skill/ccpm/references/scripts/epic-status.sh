@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 
 echo "Getting status..."
 echo ""
@@ -51,11 +52,10 @@ else
     ((total++))
 
     task_status=$(grep "^status:" "$task_file" | head -1 | sed 's/^status: *//')
-    deps=$(grep "^depends_on:" "$task_file" | head -1 | sed 's/^depends_on: *\[//' | sed 's/\]//')
 
     if [ "$task_status" = "closed" ] || [ "$task_status" = "completed" ]; then
       ((closed++))
-    elif [ -n "$deps" ] && [ "$deps" != "depends_on:" ]; then
+    elif [ -n "$(open_deps "$task_file")" ]; then
       ((blocked++))
     else
       ((open++))

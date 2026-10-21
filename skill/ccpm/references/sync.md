@@ -32,15 +32,18 @@ REPO=$(echo "$remote_url" | sed 's|.*github.com[:/]||' | sed 's|\.git$||')
 
 **Step 1 — Create epic issue:**
 
-Strip frontmatter from epic.md, then:
+Strip frontmatter from epic.md (only a `---` on line 1 opens it, and only the first `---` after
+that closes it, so a horizontal rule in the body survives), then:
 ```bash
-sed '1,/^---$/d; 1,/^---$/d' .claude/epics/<name>/epic.md > /tmp/epic-body.md
+body=$(mktemp)
+awk 'NR==1 && $0=="---" {fm=1; next} fm && $0=="---" {fm=0; next} !fm' .claude/epics/<name>/epic.md > "$body"
 epic_number=$(gh issue create \
   --repo "$REPO" \
   --title "Epic: <name>" \
-  --body-file /tmp/epic-body.md \
+  --body-file "$body" \
   --label "epic,epic:<name>,feature" \
   --json number -q .number)
+rm -f "$body"
 ```
 
 **Step 2 — Create task sub-issues:**
@@ -55,15 +58,19 @@ fi
 For <5 tasks: create sequentially.
 For ≥5 tasks: use parallel Task agents (3-4 tasks per batch).
 
-Per task:
+Per task. Each task gets its own `mktemp` file: parallel agents sharing one fixed path overwrite
+each other's body before `gh` reads it, and a predictable `/tmp` name can be pre-created as a
+symlink.
 ```bash
-sed '1,/^---$/d; 1,/^---$/d' <task_file> > /tmp/task-body.md
+body=$(mktemp)
+awk 'NR==1 && $0=="---" {fm=1; next} fm && $0=="---" {fm=0; next} !fm' <task_file> > "$body"
 task_number=$(gh issue create \
   --repo "$REPO" \
   --title "<task_name>" \
-  --body-file /tmp/task-body.md \
+  --body-file "$body" \
   --label "task,epic:<name>" \
   --json number -q .number)
+rm -f "$body"
 # or with sub-issues:
 # gh sub-issue create --parent $epic_number ...
 ```
@@ -129,7 +136,9 @@ Gather updates from `.claude/epics/<epic>/updates/<N>/` (progress.md, notes.md, 
 
 Format and post a comment:
 ```bash
-gh issue comment <N> --body-file /tmp/update-comment.md
+comment=$(mktemp)    # write the formatted comment to "$comment"
+gh issue comment <N> --body-file "$comment"
+rm -f "$comment"
 ```
 
 Comment format:
@@ -171,9 +180,11 @@ gh issue close <N>
 ```
 4. Check off the task in the epic issue body:
 ```bash
-gh issue view <epic_N> --json body -q .body > /tmp/epic-body.md
-sed -i "s/- \[ \] #<N>/- [x] #<N>/" /tmp/epic-body.md
-gh issue edit <epic_N> --body-file /tmp/epic-body.md
+body=$(mktemp)
+gh issue view <epic_N> --json body -q .body > "$body"
+sed -i.bak "s/- \[ \] #<N>/- [x] #<N>/" "$body"
+gh issue edit <epic_N> --body-file "$body"
+rm -f "$body" "$body.bak"
 ```
 5. Recalculate and update epic progress: `progress = closed_tasks / total_tasks * 100`
 
@@ -274,12 +285,15 @@ Save to `.claude/epics/<same_epic_as_original>/bug-<original_N>-<slug>.md`
 
 **Step 3 — Create a linked GitHub issue:**
 ```bash
+bug_body=$(mktemp)
+awk 'NR==1 && $0=="---" {fm=1; next} fm && $0=="---" {fm=0; next} !fm' .claude/epics/<epic>/bug-<original_N>-<slug>.md > "$bug_body"
 gh issue create \
   --repo "$REPO" \
   --title "Bug: <short description>" \
-  --body "$(cat /tmp/bug-body.md)" \
+  --body-file "$bug_body" \
   --label "bug,epic:<epic_name>" \
   --json number -q .number
+rm -f "$bug_body"
 ```
 
 The issue body should open with `Fixes / follow-up to #<original_N>` so GitHub auto-links them.

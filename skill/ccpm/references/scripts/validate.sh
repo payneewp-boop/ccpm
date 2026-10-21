@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 
 echo "Validating PM System..."
 echo ""
@@ -70,7 +71,9 @@ echo "📝 Frontmatter Validation:"
 invalid=0
 
 for file in $(find .claude -name "*.md" -path "*/epics/*" -o -path "*/prds/*" 2>/dev/null); do
-  if ! grep -q "^---" "$file"; then
+  # An opening --- on line 1 and a closing --- after it. A --- anywhere (a
+  # horizontal rule in a file with no frontmatter) does not count.
+  if ! has_frontmatter "$file"; then
     echo "  ⚠️ Missing frontmatter: $(basename "$file")"
     ((invalid++))
   fi
@@ -93,4 +96,8 @@ else
   echo "💡 Run /pm:clean to fix some issues automatically"
 fi
 
-exit 0
+# Errors and files without frontmatter fail the run, so a caller that checks the
+# exit status is not told broken project state is fine. Warnings are reported but
+# do not fail it: a dangling reference is worth reading, not worth blocking on.
+[ $errors -eq 0 ] && [ $invalid -eq 0 ]
+exit $?

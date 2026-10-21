@@ -97,9 +97,15 @@ sed -i.bak "/^<field>:/c\\<field>: <value>" <file>
 rm <file>.bak
 ```
 
-When stripping frontmatter to get body content for GitHub:
+When stripping frontmatter to get body content for GitHub, write it to a file of its own
+(`mktemp`, never a fixed `/tmp` name) and remove it afterwards. Only a `---` on line 1 opens
+frontmatter and only the first `---` after it closes it, so a horizontal rule in the body is
+kept. The `sed '1,/^---$/d; 1,/^---$/d'` form that used to be here deleted the body as well:
 ```bash
-sed '1,/^---$/d; 1,/^---$/d' <file> > /tmp/body.md
+body=$(mktemp)
+awk 'NR==1 && $0=="---" {fm=1; next} fm && $0=="---" {fm=0; next} !fm' <file> > "$body"
+# ... use "$body" ...
+rm -f "$body"
 ```
 
 ---
